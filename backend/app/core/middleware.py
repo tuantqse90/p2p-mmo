@@ -1,6 +1,7 @@
-"""Security middleware: rate limiting, security headers, request logging."""
+"""Security middleware: rate limiting, security headers, request logging, request ID."""
 
 import time
+import uuid
 from collections import defaultdict
 
 from fastapi import Request, Response
@@ -107,6 +108,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Attach a unique request ID to every request/response for tracing."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log request method, path, status, and duration. Never log secrets."""
 
@@ -120,8 +132,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             import logging
 
             logger = logging.getLogger("p2p.access")
+            request_id = getattr(request.state, "request_id", "-")
             logger.info(
-                "%s %s %d %.1fms",
+                "[%s] %s %s %d %.1fms",
+                request_id,
                 request.method,
                 request.url.path,
                 response.status_code,

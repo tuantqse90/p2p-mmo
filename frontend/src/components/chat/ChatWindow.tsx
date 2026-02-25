@@ -5,6 +5,7 @@ import { Message } from "@/lib/types";
 import { useEncryption } from "@/hooks/useEncryption";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAuthStore } from "@/stores/authStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 
@@ -25,9 +26,14 @@ export function ChatWindow({ orderId, counterpartyPublicKey }: ChatWindowProps) 
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const { encrypt, decrypt, hasKeys } = useEncryption();
   const { walletAddress } = useAuthStore();
+  const { addNotification } = useNotificationStore();
 
   // WebSocket for real-time messages
   useWebSocket(orderId, (data) => {
@@ -53,44 +59,66 @@ export function ChatWindow({ orderId, counterpartyPublicKey }: ChatWindowProps) 
     }
   });
 
+  const decryptMessages = (items: Message[]): DecryptedMessage[] => {
+    if (!counterpartyPublicKey) return [];
+    const decrypted: DecryptedMessage[] = [];
+    for (const msg of items) {
+      try {
+        const text = decrypt(msg.ciphertext, msg.nonce, counterpartyPublicKey);
+        decrypted.push({
+          id: msg.id,
+          sender: msg.sender_wallet,
+          text,
+          timestamp: msg.created_at,
+          isMine:
+            msg.sender_wallet.toLowerCase() === walletAddress?.toLowerCase(),
+        });
+      } catch {
+        // Skip messages we can't decrypt
+      }
+    }
+    return decrypted;
+  };
+
   // Load existing messages
   useEffect(() => {
     if (!orderId || !counterpartyPublicKey || !hasKeys) return;
 
     const loadMessages = async () => {
       try {
-        const data = await api.get<{ items: Message[] }>(
-          `/orders/${orderId}/messages`
+        const data = await api.get<{ items: Message[]; total_pages: number }>(
+          `/orders/${orderId}/messages?page=1&page_size=50`
         );
-        const decrypted: DecryptedMessage[] = [];
-        for (const msg of data.items) {
-          try {
-            const text = decrypt(
-              msg.ciphertext,
-              msg.nonce,
-              counterpartyPublicKey
-            );
-            decrypted.push({
-              id: msg.id,
-              sender: msg.sender_wallet,
-              text,
-              timestamp: msg.created_at,
-              isMine:
-                msg.sender_wallet.toLowerCase() ===
-                walletAddress?.toLowerCase(),
-            });
-          } catch {
-            // Skip messages we can't decrypt
-          }
-        }
-        setMessages(decrypted);
+        setMessages(decryptMessages(data.items));
+        setHasMoreMessages(data.total_pages > 1);
+        setCurrentPage(1);
       } catch {
         // Failed to load messages
       }
     };
 
     loadMessages();
-  }, [orderId, counterpartyPublicKey, hasKeys, walletAddress, decrypt]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, counterpartyPublicKey, hasKeys, walletAddress]);
+
+  const loadOlderMessages = async () => {
+    if (loadingOlder || !hasMoreMessages) return;
+    setLoadingOlder(true);
+    try {
+      const nextPage = currentPage + 1;
+      const data = await api.get<{ items: Message[]; total_pages: number }>(
+        `/orders/${orderId}/messages?page=${nextPage}&page_size=50`
+      );
+      const older = decryptMessages(data.items);
+      setMessages((prev) => [...older, ...prev]);
+      setCurrentPage(nextPage);
+      setHasMoreMessages(nextPage < data.total_pages);
+    } catch {
+      // Failed to load older messages
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -120,8 +148,9 @@ export function ChatWindow({ orderId, counterpartyPublicKey }: ChatWindowProps) 
         },
       ]);
       setInput("");
-    } catch {
-      // Send failed
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to send message";
+      addNotification("error", message);
     } finally {
       setLoading(false);
     }
@@ -152,7 +181,18 @@ export function ChatWindow({ orderId, counterpartyPublicKey }: ChatWindowProps) 
         <p className="text-xs text-muted">End-to-end encrypted with NaCl</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+        {hasMoreMessages && (
+          <div className="text-center">
+            <button
+              onClick={loadOlderMessages}
+              disabled={loadingOlder}
+              className="text-xs text-primary hover:underline disabled:opacity-50"
+            >
+              {loadingOlder ? "Loading..." : "Load older messages"}
+            </button>
+          </div>
+        )}
         {messages.map((msg) => (
           <div
             key={msg.id}

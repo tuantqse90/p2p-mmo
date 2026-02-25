@@ -2,9 +2,11 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
+from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import async_session_factory
 from app.models.base import OrderStatus
 from app.models.order import Order
@@ -14,11 +16,21 @@ logger = logging.getLogger(__name__)
 
 SELLER_TIMEOUT = timedelta(hours=24)
 CONFIRM_WINDOW = timedelta(hours=72)
+LOCK_KEY = "lock:timeout_checker"
+LOCK_TTL = 120  # seconds
 
 
 @celery_app.task(name="app.workers.timeout_checker.check_timeouts")
 def check_timeouts():
-    asyncio.get_event_loop().run_until_complete(_check_timeouts())
+    redis = Redis.from_url(settings.redis_url)
+    acquired = redis.set(LOCK_KEY, "1", nx=True, ex=LOCK_TTL)
+    if not acquired:
+        logger.info("Timeout checker already running on another worker, skipping")
+        return
+    try:
+        asyncio.get_event_loop().run_until_complete(_check_timeouts())
+    finally:
+        redis.delete(LOCK_KEY)
 
 
 async def _check_timeouts():

@@ -46,3 +46,8 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+// Expose store for E2E testing (non-production only)
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+  (window as unknown as Record<string, unknown>).__authStore = useAuthStore;
+}

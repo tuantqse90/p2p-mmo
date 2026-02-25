@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAccount, useSignMessage, useDisconnect } from "wagmi";
 import { useAuthStore } from "@/stores/authStore";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -15,6 +15,7 @@ export function useAuth() {
   const { token, walletAddress, setAuth, setEncryptionKeys, logout } =
     useAuthStore();
   const { addNotification } = useNotificationStore();
+  const wasConnectedRef = useRef(false);
 
   const login = useCallback(async () => {
     if (!address) throw new Error("Wallet not connected");
@@ -56,9 +57,16 @@ export function useAuth() {
     addNotification("info", "Signed out");
   }, [logout, disconnect, addNotification]);
 
-  // Auto-logout when wallet disconnects
+  // Track if wallet was ever connected in this session
   useEffect(() => {
-    if (!isConnected && token) {
+    if (isConnected) {
+      wasConnectedRef.current = true;
+    }
+  }, [isConnected]);
+
+  // Auto-logout only when wallet actively disconnects (not on initial hydration)
+  useEffect(() => {
+    if (wasConnectedRef.current && !isConnected && token) {
       logout();
     }
   }, [isConnected, token, logout]);

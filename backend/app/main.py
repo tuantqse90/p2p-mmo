@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.middleware import (
     RateLimitMiddleware,
+    RequestIDMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
 )
@@ -40,6 +41,7 @@ app = FastAPI(
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit_per_minute)
+app.add_middleware(RequestIDMiddleware)
 
 # CORS — locked down to configured origins
 app.add_middleware(

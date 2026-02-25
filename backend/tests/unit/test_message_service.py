@@ -46,7 +46,8 @@ async def test_get_messages(db_session, sample_order):
         sample_order.id, SELLER_WALLET, "msg2", "nonce2", db_session
     )
 
-    messages = await get_messages(sample_order.id, BUYER_WALLET, db_session)
+    messages, total = await get_messages(sample_order.id, BUYER_WALLET, db_session)
+    assert total == 2
     assert len(messages) == 2
     assert messages[0].ciphertext == "msg1"
     assert messages[1].ciphertext == "msg2"
@@ -63,5 +64,6 @@ async def test_get_messages_not_party(db_session, sample_order):
 
 
 async def test_get_messages_empty(db_session, sample_order):
-    messages = await get_messages(sample_order.id, BUYER_WALLET, db_session)
+    messages, total = await get_messages(sample_order.id, BUYER_WALLET, db_session)
     assert messages == []
+    assert total == 0

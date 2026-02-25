@@ -56,10 +56,11 @@ async def test_get_messages(client, buyer_headers, sample_order):
         headers=buyer_headers,
     )
     assert resp.status_code == 200
-    messages = resp.json()
-    assert len(messages) == 2
-    assert messages[0]["ciphertext"] == "msg1"
-    assert messages[1]["ciphertext"] == "msg2"
+    data = resp.json()
+    assert data["total"] == 2
+    assert len(data["items"]) == 2
+    assert data["items"][0]["ciphertext"] == "msg1"
+    assert data["items"][1]["ciphertext"] == "msg2"
 
 
 async def test_get_messages_empty(client, buyer_headers, sample_order):
@@ -68,7 +69,9 @@ async def test_get_messages_empty(client, buyer_headers, sample_order):
         headers=buyer_headers,
     )
     assert resp.status_code == 200
-    assert resp.json() == []
+    data = resp.json()
+    assert data["items"] == []
+    assert data["total"] == 0
 
 
 async def test_get_messages_order_not_found(client, buyer_headers):

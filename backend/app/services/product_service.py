@@ -51,8 +51,14 @@ async def list_products(
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar_one()
 
-    # Sort
-    sort_col = getattr(Product, params.sort_by)
+    # Sort (whitelist allowed columns to prevent arbitrary attribute access)
+    allowed_sort_columns = {
+        "created_at": Product.created_at,
+        "price_usdt": Product.price_usdt,
+        "title_preview": Product.title_preview,
+        "total_sold": Product.total_sold,
+    }
+    sort_col = allowed_sort_columns.get(params.sort_by, Product.created_at)
     if params.sort_order == "desc":
         query = query.order_by(sort_col.desc())
     else:

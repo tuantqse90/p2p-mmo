@@ -105,7 +105,7 @@ async def test_list_orders_by_status(db_session, sample_order):
 
 async def test_seller_confirm_delivery(db_session, sample_order):
     order = await seller_confirm_delivery(
-        sample_order, "encrypted_product_key_data", db_session
+        sample_order.id, "encrypted_product_key_data", db_session
     )
     assert order.status == OrderStatus.SELLER_CONFIRMED
     assert order.product_key_encrypted == "encrypted_product_key_data"
@@ -113,44 +113,45 @@ async def test_seller_confirm_delivery(db_session, sample_order):
 
 
 async def test_seller_confirm_delivery_wrong_status(db_session, confirmed_order):
-    with pytest.raises(ValueError, match="ORDER_NOT_CANCELLABLE"):
+    with pytest.raises(ValueError, match="INVALID_ORDER_STATUS"):
         await seller_confirm_delivery(
-            confirmed_order, "key", db_session
+            confirmed_order.id, "key", db_session
         )
 
 
 async def test_buyer_confirm_received(db_session, confirmed_order):
-    order = await buyer_confirm_received(confirmed_order, db_session)
+    order = await buyer_confirm_received(confirmed_order.id, db_session)
     assert order.status == OrderStatus.COMPLETED
     assert order.completed_at is not None
 
 
 async def test_buyer_confirm_wrong_status(db_session, sample_order):
-    with pytest.raises(ValueError, match="ORDER_NOT_CANCELLABLE"):
-        await buyer_confirm_received(sample_order, db_session)
+    with pytest.raises(ValueError, match="INVALID_ORDER_STATUS"):
+        await buyer_confirm_received(sample_order.id, db_session)
 
 
 async def test_cancel_order(db_session, sample_order):
-    order = await cancel_order(sample_order, db_session)
+    order = await cancel_order(sample_order.id, db_session)
     assert order.status == OrderStatus.CANCELLED
 
 
 async def test_cancel_order_wrong_status(db_session, confirmed_order):
-    with pytest.raises(ValueError, match="ORDER_NOT_CANCELLABLE"):
-        await cancel_order(confirmed_order, db_session)
+    with pytest.raises(ValueError, match="INVALID_ORDER_STATUS"):
+        await cancel_order(confirmed_order.id, db_session)
 
 
 async def test_open_dispute_from_created(db_session, sample_order):
-    order = await open_dispute(sample_order, db_session)
+    order = await open_dispute(sample_order.id, db_session)
     assert order.status == OrderStatus.DISPUTED
     assert order.dispute_opened_at is not None
+    assert order.dispute_deadline is not None
 
 
 async def test_open_dispute_from_confirmed(db_session, confirmed_order):
-    order = await open_dispute(confirmed_order, db_session)
+    order = await open_dispute(confirmed_order.id, db_session)
     assert order.status == OrderStatus.DISPUTED
 
 
 async def test_open_dispute_wrong_status(db_session, completed_order):
-    with pytest.raises(ValueError, match="ORDER_NOT_CANCELLABLE"):
-        await open_dispute(completed_order, db_session)
+    with pytest.raises(ValueError, match="INVALID_ORDER_STATUS"):
+        await open_dispute(completed_order.id, db_session)

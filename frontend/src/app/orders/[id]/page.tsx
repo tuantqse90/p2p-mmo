@@ -36,11 +36,12 @@ export default function OrderDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
 
-  const fetchOrder = useCallback(async () => {
+  const fetchOrder = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data = await api.get<Order>(`/orders/${id}`);
+      const data = await api.request<Order>(`/orders/${id}`, { signal });
       setOrder(data);
-    } catch {
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setOrder(null);
     } finally {
       setLoading(false);
@@ -48,7 +49,9 @@ export default function OrderDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    fetchOrder();
+    const controller = new AbortController();
+    fetchOrder(controller.signal);
+    return () => controller.abort();
   }, [fetchOrder]);
 
   // Fetch evidence if disputed

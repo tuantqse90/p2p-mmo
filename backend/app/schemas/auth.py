@@ -14,7 +14,7 @@ class NonceResponse(BaseModel):
 
 class VerifyRequest(BaseModel):
     wallet_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
-    signature: str
+    signature: str = Field(..., pattern=r"^0x[a-fA-F0-9]{130}$")
     public_key: str = Field(..., min_length=40, max_length=88)
 
 

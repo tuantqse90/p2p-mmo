@@ -46,7 +46,7 @@ async def test_submit_evidence_order_not_found(db_session):
 
 
 async def test_submit_evidence_order_not_disputed(db_session, sample_order):
-    with pytest.raises(ValueError, match="ORDER_NOT_CANCELLABLE"):
+    with pytest.raises(ValueError, match="INVALID_ORDER_STATUS"):
         await submit_evidence(
             sample_order.id, BUYER_WALLET, "QmHash", EvidenceType.OTHER, db_session
         )
@@ -79,7 +79,7 @@ async def test_resolve_dispute_order_not_found(db_session):
 
 
 async def test_resolve_dispute_not_disputed(db_session, sample_order):
-    with pytest.raises(ValueError, match="ORDER_NOT_CANCELLABLE"):
+    with pytest.raises(ValueError, match="INVALID_ORDER_STATUS"):
         await resolve_dispute(
             sample_order.id, ARBITRATOR_WALLET, True, db_session
         )

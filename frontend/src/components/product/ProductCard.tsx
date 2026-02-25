@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
 import { Product, ProductCategory } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -17,7 +18,7 @@ interface ProductCardProps {
   product: Product;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export const ProductCard = memo(function ProductCard({ product }: ProductCardProps) {
   return (
     <Link href={`/marketplace/${product.id}`}>
       <Card hover>
@@ -54,4 +55,4 @@ export function ProductCard({ product }: ProductCardProps) {
       </Card>
     </Link>
   );
-}
+});

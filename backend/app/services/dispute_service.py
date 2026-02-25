@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,9 @@ async def submit_evidence(
     if order is None:
         raise ValueError("NOT_FOUND")
     if order.status != OrderStatus.DISPUTED:
-        raise ValueError("ORDER_NOT_CANCELLABLE")
+        raise ValueError("INVALID_ORDER_STATUS")
+    if order.dispute_deadline and datetime.now(UTC) > order.dispute_deadline:
+        raise ValueError("DISPUTE_DEADLINE_PASSED")
     if submitter_wallet not in (order.buyer_wallet, order.seller_wallet):
         raise ValueError("FORBIDDEN")
 
@@ -47,7 +50,7 @@ async def resolve_dispute(
     if order is None:
         raise ValueError("NOT_FOUND")
     if order.status != OrderStatus.DISPUTED:
-        raise ValueError("ORDER_NOT_CANCELLABLE")
+        raise ValueError("INVALID_ORDER_STATUS")
     if order.arbitrator_wallet != arbitrator_wallet:
         raise ValueError("NOT_ARBITRATOR")
 

@@ -1,11 +1,12 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import OrderStatus
+from app.models.blacklist import Blacklist
 from app.models.order import Order
 from app.models.product import Product
 from app.schemas.order import OrderCreate, OrderListParams
@@ -16,6 +17,11 @@ BPS_DENOMINATOR = 10_000
 
 
 async def create_order(buyer_wallet: str, data: OrderCreate, db: AsyncSession) -> Order:
+    # Check if buyer or seller is blacklisted
+    blacklisted = await db.execute(select(Blacklist).where(Blacklist.wallet == buyer_wallet))
+    if blacklisted.scalar_one_or_none() is not None:
+        raise ValueError("WALLET_BLACKLISTED")
+
     # Fetch product
     result = await db.execute(select(Product).where(Product.id == data.product_id))
     product = result.scalar_one_or_none()
@@ -24,6 +30,18 @@ async def create_order(buyer_wallet: str, data: OrderCreate, db: AsyncSession) -
 
     if product.seller_wallet == buyer_wallet:
         raise ValueError("FORBIDDEN")
+
+    # Check if seller is blacklisted
+    seller_blacklisted = await db.execute(
+        select(Blacklist).where(Blacklist.wallet == product.seller_wallet)
+    )
+    if seller_blacklisted.scalar_one_or_none() is not None:
+        raise ValueError("SELLER_BLACKLISTED")
+
+    # Decrement stock
+    if product.stock <= 0:
+        raise ValueError("OUT_OF_STOCK")
+    product.stock -= 1
 
     platform_fee = (data.amount * PLATFORM_FEE_BPS) / BPS_DENOMINATOR
 
@@ -74,11 +92,23 @@ async def list_orders(
     return list(result.scalars().all()), total
 
 
+async def _lock_order(order_id: uuid.UUID, db: AsyncSession) -> Order:
+    """Fetch order with pessimistic lock (SELECT ... FOR UPDATE) to prevent race conditions."""
+    result = await db.execute(
+        select(Order).where(Order.id == order_id).with_for_update()
+    )
+    order = result.scalar_one_or_none()
+    if order is None:
+        raise ValueError("NOT_FOUND")
+    return order
+
+
 async def seller_confirm_delivery(
-    order: Order, product_key_encrypted: str, db: AsyncSession
+    order_id: uuid.UUID, product_key_encrypted: str, db: AsyncSession
 ) -> Order:
+    order = await _lock_order(order_id, db)
     if order.status != OrderStatus.CREATED:
-        raise ValueError("ORDER_NOT_CANCELLABLE")
+        raise ValueError("INVALID_ORDER_STATUS")
     order.status = OrderStatus.SELLER_CONFIRMED
     order.seller_confirmed_at = datetime.now(UTC)
     order.product_key_encrypted = product_key_encrypted
@@ -87,9 +117,10 @@ async def seller_confirm_delivery(
     return order
 
 
-async def buyer_confirm_received(order: Order, db: AsyncSession) -> Order:
+async def buyer_confirm_received(order_id: uuid.UUID, db: AsyncSession) -> Order:
+    order = await _lock_order(order_id, db)
     if order.status != OrderStatus.SELLER_CONFIRMED:
-        raise ValueError("ORDER_NOT_CANCELLABLE")
+        raise ValueError("INVALID_ORDER_STATUS")
     order.status = OrderStatus.COMPLETED
     order.completed_at = datetime.now(UTC)
     await db.flush()
@@ -97,20 +128,30 @@ async def buyer_confirm_received(order: Order, db: AsyncSession) -> Order:
     return order
 
 
-async def cancel_order(order: Order, db: AsyncSession) -> Order:
+async def cancel_order(order_id: uuid.UUID, db: AsyncSession) -> Order:
+    order = await _lock_order(order_id, db)
     if order.status != OrderStatus.CREATED:
-        raise ValueError("ORDER_NOT_CANCELLABLE")
+        raise ValueError("INVALID_ORDER_STATUS")
     order.status = OrderStatus.CANCELLED
+
+    # Restore product stock
+    result = await db.execute(select(Product).where(Product.id == order.product_id))
+    product = result.scalar_one_or_none()
+    if product is not None:
+        product.stock += 1
+
     await db.flush()
     await db.refresh(order)
     return order
 
 
-async def open_dispute(order: Order, db: AsyncSession) -> Order:
+async def open_dispute(order_id: uuid.UUID, db: AsyncSession) -> Order:
+    order = await _lock_order(order_id, db)
     if order.status not in (OrderStatus.CREATED, OrderStatus.SELLER_CONFIRMED):
-        raise ValueError("ORDER_NOT_CANCELLABLE")
+        raise ValueError("INVALID_ORDER_STATUS")
     order.status = OrderStatus.DISPUTED
     order.dispute_opened_at = datetime.now(UTC)
+    order.dispute_deadline = datetime.now(UTC) + timedelta(days=7)
     await db.flush()
     await db.refresh(order)
     return order

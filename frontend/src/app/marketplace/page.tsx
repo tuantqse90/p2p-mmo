@@ -12,6 +12,7 @@ import { Product, ProductListParams, PaginatedResponse } from "@/lib/types";
 export default function MarketplacePage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filtering, setFiltering] = useState(false);
   const [totalPages, setTotalPages] = useState(1);
   const [filters, setFilters] = useState<ProductListParams>({
     page: 1,
@@ -21,7 +22,9 @@ export default function MarketplacePage() {
   });
 
   const fetchProducts = useCallback(async () => {
-    setLoading(true);
+    const isInitial = products.length === 0;
+    if (isInitial) setLoading(true);
+    else setFiltering(true);
     try {
       const params = new URLSearchParams();
       if (filters.page) params.set("page", String(filters.page));
@@ -42,8 +45,9 @@ export default function MarketplacePage() {
       setProducts([]);
     } finally {
       setLoading(false);
+      setFiltering(false);
     }
-  }, [filters]);
+  }, [filters, products.length]);
 
   useEffect(() => {
     fetchProducts();
@@ -60,6 +64,13 @@ export default function MarketplacePage() {
         <div className="mb-6">
           <ProductFilters filters={filters} onChange={setFilters} />
         </div>
+
+        {filtering && (
+          <div className="flex items-center gap-2 mb-4 text-sm text-muted">
+            <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+            Updating results...
+          </div>
+        )}
 
         <ProductList
           products={products}

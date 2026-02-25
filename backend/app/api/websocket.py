@@ -1,6 +1,8 @@
 import json
 import logging
+import time
 import uuid
+from collections import defaultdict
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from redis.asyncio import Redis
@@ -14,6 +16,9 @@ from app.models.order import Order
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+WS_RATE_LIMIT = 30  # messages per minute
+WS_RATE_WINDOW = 60  # seconds
 
 
 class ConnectionManager:
@@ -121,10 +126,22 @@ async def order_websocket(
                 pass
 
         async def listen_ws():
-            """Receive client messages and broadcast."""
+            """Receive client messages and broadcast (with rate limiting)."""
+            msg_timestamps: list[float] = []
             try:
                 while True:
                     data = await websocket.receive_text()
+
+                    # Rate limit: 30 messages per minute
+                    now = time.time()
+                    msg_timestamps = [t for t in msg_timestamps if t > now - WS_RATE_WINDOW]
+                    if len(msg_timestamps) >= WS_RATE_LIMIT:
+                        await websocket.send_text(
+                            json.dumps({"error": "RATE_LIMITED", "retry_after": WS_RATE_WINDOW})
+                        )
+                        continue
+                    msg_timestamps.append(now)
+
                     # Parse and broadcast to other connections
                     try:
                         payload = json.loads(data)

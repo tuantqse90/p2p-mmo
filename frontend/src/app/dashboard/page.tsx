@@ -20,6 +20,13 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const pageSize = 20;
+
+  useEffect(() => {
+    setPage(1);
+  }, [tab]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -29,19 +36,22 @@ export default function DashboardPage() {
       try {
         if (tab === "purchases") {
           const data = await api.get<PaginatedResponse<Order>>(
-            "/orders?role=buyer"
+            `/orders?role=buyer&page=${page}&page_size=${pageSize}`
           );
           setOrders(data.items);
+          setTotalPages(data.total_pages);
         } else if (tab === "sales") {
           const data = await api.get<PaginatedResponse<Order>>(
-            "/orders?role=seller"
+            `/orders?role=seller&page=${page}&page_size=${pageSize}`
           );
           setOrders(data.items);
+          setTotalPages(data.total_pages);
         } else {
           const data = await api.get<PaginatedResponse<Product>>(
-            "/products/me"
+            `/products/me?page=${page}&page_size=${pageSize}`
           );
           setProducts(data.items);
+          setTotalPages(data.total_pages);
         }
       } catch {
         setOrders([]);
@@ -52,7 +62,7 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, [tab, isAuthenticated]);
+  }, [tab, page, isAuthenticated]);
 
   if (!isAuthenticated) {
     return (
@@ -121,6 +131,31 @@ export default function DashboardPage() {
                 role={tab === "purchases" ? "buyer" : "seller"}
               />
             ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && !loading && (
+          <div className="flex items-center justify-center gap-2 mt-8">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
           </div>
         )}
       </main>

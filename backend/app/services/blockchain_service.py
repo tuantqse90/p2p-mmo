@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from web3 import AsyncWeb3
@@ -6,8 +7,11 @@ from web3.middleware import ExtraDataToPOAMiddleware
 
 from app.core.config import settings
 
-# Load ABIs from contracts build output
-ABI_DIR = Path(__file__).parent.parent.parent.parent / "contracts" / "out"
+# Load ABIs from contracts build output (configurable via CONTRACT_ABI_DIR env var)
+ABI_DIR = Path(os.environ.get(
+    "CONTRACT_ABI_DIR",
+    str(Path(__file__).parent.parent.parent.parent / "contracts" / "out"),
+))
 
 
 def _load_abi(contract_name: str) -> list:

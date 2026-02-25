@@ -12,7 +12,7 @@ class ApiClient {
     this.token = token;
   }
 
-  private async request<T>(
+  async request<T>(
     path: string,
     options: RequestInit = {}
   ): Promise<T> {

@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -20,6 +21,12 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 24
+
+    @model_validator(mode="after")
+    def _enforce_jwt_secret_in_production(self) -> "Settings":
+        if self.app_env == "production" and self.jwt_secret_key == "change-me-in-production":
+            raise ValueError("JWT_SECRET_KEY must be changed from default in production")
+        return self
 
     # BSC
     bsc_rpc_url: str = "https://bsc-dataseed1.binance.org"

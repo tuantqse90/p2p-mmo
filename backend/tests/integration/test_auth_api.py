@@ -44,7 +44,7 @@ async def test_full_auth_flow(client):
         "/auth/verify",
         json={
             "wallet_address": wallet,
-            "signature": signed.signature.hex(),
+            "signature": "0x" + signed.signature.hex(),
             "public_key": DEFAULT_PUBLIC_KEY,
         },
     )
@@ -87,7 +87,7 @@ async def test_verify_invalid_signature(client):
         "/auth/verify",
         json={
             "wallet_address": wallet,
-            "signature": signed.signature.hex(),
+            "signature": "0x" + signed.signature.hex(),
             "public_key": DEFAULT_PUBLIC_KEY,
         },
     )

@@ -1,13 +1,19 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
 from app.models.order import Order
 
 
-async def get_messages(order_id: uuid.UUID, wallet: str, db: AsyncSession) -> list[Message]:
+async def get_messages(
+    order_id: uuid.UUID,
+    wallet: str,
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[Message], int]:
     # Verify user is party to the order
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
@@ -16,12 +22,20 @@ async def get_messages(order_id: uuid.UUID, wallet: str, db: AsyncSession) -> li
     if wallet not in (order.buyer_wallet, order.seller_wallet, order.arbitrator_wallet):
         raise ValueError("FORBIDDEN")
 
+    base_query = select(Message).where(Message.order_id == order_id)
+
+    # Count total
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total = (await db.execute(count_query)).scalar_one()
+
+    # Paginate (newest first in pages, but messages in ascending order within page)
+    offset = (page - 1) * page_size
     result = await db.execute(
-        select(Message)
-        .where(Message.order_id == order_id)
-        .order_by(Message.created_at.asc())
+        base_query.order_by(Message.created_at.asc())
+        .offset(offset)
+        .limit(page_size)
     )
-    return list(result.scalars().all())
+    return list(result.scalars().all()), total
 
 
 async def create_message(

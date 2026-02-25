@@ -30,6 +30,12 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     mapping(uint256 => Order) private _orders;
     mapping(address => bool) public supportedTokens;
 
+    // --- Modifiers ---
+    modifier orderExists(uint256 orderId) {
+        require(_orders[orderId].buyer != address(0), "P2PEscrow: order does not exist");
+        _;
+    }
+
     // --- Constructor ---
     constructor(address _treasury, address _arbitratorPool, address _owner) Ownable(_owner) {
         require(_treasury != address(0), "P2PEscrow: zero treasury");
@@ -85,7 +91,7 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     }
 
     /// @inheritdoc IP2PEscrow
-    function buyerConfirmReceived(uint256 orderId) external nonReentrant whenNotPaused {
+    function buyerConfirmReceived(uint256 orderId) external nonReentrant whenNotPaused orderExists(orderId) {
         Order storage order = _orders[orderId];
         require(msg.sender == order.buyer, "P2PEscrow: not buyer");
         require(order.status == OrderStatus.SellerConfirmed, "P2PEscrow: invalid status");
@@ -99,7 +105,7 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     }
 
     /// @inheritdoc IP2PEscrow
-    function cancelOrder(uint256 orderId) external nonReentrant whenNotPaused {
+    function cancelOrder(uint256 orderId) external nonReentrant whenNotPaused orderExists(orderId) {
         Order storage order = _orders[orderId];
         require(msg.sender == order.buyer, "P2PEscrow: not buyer");
         require(order.status == OrderStatus.Created, "P2PEscrow: invalid status");
@@ -118,7 +124,7 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     // ========================
 
     /// @inheritdoc IP2PEscrow
-    function sellerConfirmDelivery(uint256 orderId) external whenNotPaused {
+    function sellerConfirmDelivery(uint256 orderId) external nonReentrant whenNotPaused orderExists(orderId) {
         Order storage order = _orders[orderId];
         require(msg.sender == order.seller, "P2PEscrow: not seller");
         require(order.status == OrderStatus.Created, "P2PEscrow: invalid status");
@@ -134,7 +140,9 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     // ========================
 
     /// @inheritdoc IP2PEscrow
-    function openDispute(uint256 orderId, string calldata evidenceHash) external nonReentrant whenNotPaused {
+    function openDispute(uint256 orderId, string calldata evidenceHash) external nonReentrant whenNotPaused orderExists(orderId) {
+        require(bytes(evidenceHash).length > 0, "P2PEscrow: empty evidence hash");
+
         Order storage order = _orders[orderId];
         require(
             msg.sender == order.buyer || msg.sender == order.seller,
@@ -164,9 +172,12 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     }
 
     /// @inheritdoc IP2PEscrow
-    function submitEvidence(uint256 orderId, string calldata ipfsHash) external whenNotPaused {
+    function submitEvidence(uint256 orderId, string calldata ipfsHash) external nonReentrant whenNotPaused orderExists(orderId) {
+        require(bytes(ipfsHash).length > 0, "P2PEscrow: empty evidence hash");
+
         Order storage order = _orders[orderId];
         require(order.status == OrderStatus.Disputed, "P2PEscrow: not disputed");
+        require(block.timestamp <= order.disputeDeadline, "P2PEscrow: dispute deadline passed");
         require(
             msg.sender == order.buyer || msg.sender == order.seller,
             "P2PEscrow: not buyer or seller"
@@ -186,35 +197,41 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     // ========================
 
     /// @inheritdoc IP2PEscrow
-    function resolveDispute(uint256 orderId, bool favorBuyer) external nonReentrant whenNotPaused {
+    function resolveDispute(uint256 orderId, bool favorBuyer) external nonReentrant whenNotPaused orderExists(orderId) {
         Order storage order = _orders[orderId];
         require(msg.sender == order.arbitrator, "P2PEscrow: not arbitrator");
         require(order.status == OrderStatus.Disputed, "P2PEscrow: not disputed");
+        require(block.timestamp <= order.disputeDeadline, "P2PEscrow: dispute deadline passed");
 
+        // Cache storage reads in local variables (gas optimization)
         IERC20 token = IERC20(order.token);
+        address buyer = order.buyer;
+        address seller = order.seller;
+        address arb = order.arbitrator;
         uint256 arbFee = order.arbitrationFee;
+        uint256 platformFee = order.platformFee;
         uint256 payout = order.amount - arbFee;
 
         if (favorBuyer) {
             order.status = OrderStatus.ResolvedBuyer;
-            token.safeTransfer(order.buyer, payout);
+            token.safeTransfer(buyer, payout);
         } else {
             order.status = OrderStatus.ResolvedSeller;
-            token.safeTransfer(order.seller, payout);
+            token.safeTransfer(seller, payout);
         }
 
         // Arbitrator gets arbitration fee
-        token.safeTransfer(order.arbitrator, arbFee);
+        token.safeTransfer(arb, arbFee);
         // Platform fee goes to treasury
-        token.safeTransfer(treasury, order.platformFee);
+        token.safeTransfer(treasury, platformFee);
 
         // Update arbitrator pool state
-        arbitratorPool.decrementDisputeCount(order.arbitrator);
-        arbitratorPool.recordEarnings(order.arbitrator, arbFee);
+        arbitratorPool.decrementDisputeCount(arb);
+        arbitratorPool.recordEarnings(arb, arbFee);
         // Default to consistent=true; owner can override via separate call if needed
-        arbitratorPool.updateReputation(order.arbitrator, true);
+        arbitratorPool.updateReputation(arb, true);
 
-        emit DisputeResolved(orderId, order.arbitrator, favorBuyer, arbFee);
+        emit DisputeResolved(orderId, arb, favorBuyer, arbFee);
     }
 
     // ========================
@@ -222,7 +239,7 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     // ========================
 
     /// @inheritdoc IP2PEscrow
-    function autoExpireOrder(uint256 orderId) external nonReentrant {
+    function autoExpireOrder(uint256 orderId) external nonReentrant orderExists(orderId) {
         Order storage order = _orders[orderId];
         require(order.status == OrderStatus.Created, "P2PEscrow: invalid status");
         require(block.timestamp > order.createdAt + SELLER_TIMEOUT, "P2PEscrow: timeout not reached");
@@ -237,7 +254,7 @@ contract P2PEscrow is IP2PEscrow, Ownable, ReentrancyGuard, Pausable {
     }
 
     /// @inheritdoc IP2PEscrow
-    function autoReleaseToSeller(uint256 orderId) external nonReentrant {
+    function autoReleaseToSeller(uint256 orderId) external nonReentrant orderExists(orderId) {
         Order storage order = _orders[orderId];
         require(order.status == OrderStatus.SellerConfirmed, "P2PEscrow: invalid status");
         require(

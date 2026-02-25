@@ -18,6 +18,7 @@ contract ArbitratorPool is IArbitratorPool, Ownable, ReentrancyGuard {
     uint256 public constant MIN_ACTIVE_REPUTATION = 10;
     uint256 public constant REPUTATION_INCREASE = 2;
     uint256 public constant REPUTATION_DECREASE = 5;
+    uint256 public constant MAX_ACTIVE_DISPUTES = 10;
 
     IERC20 public immutable stakeToken;
     address public escrowContract;
@@ -104,10 +105,10 @@ contract ArbitratorPool is IArbitratorPool, Ownable, ReentrancyGuard {
         uint256 totalWeight = 0;
         uint256 eligibleCount = 0;
 
-        // First pass: count eligible and total weight
+        // First pass: count eligible and total weight (exclude overloaded arbitrators)
         for (uint256 i = 0; i < count; i++) {
             address arb = activeArbitrators[i];
-            if (arb != buyer && arb != seller) {
+            if (arb != buyer && arb != seller && activeDisputeCount[arb] < MAX_ACTIVE_DISPUTES) {
                 totalWeight += arbitrators[arb].reputation;
                 eligibleCount++;
             }
@@ -122,7 +123,7 @@ contract ArbitratorPool is IArbitratorPool, Ownable, ReentrancyGuard {
         uint256 cumulative = 0;
         for (uint256 i = 0; i < count; i++) {
             address arb = activeArbitrators[i];
-            if (arb != buyer && arb != seller) {
+            if (arb != buyer && arb != seller && activeDisputeCount[arb] < MAX_ACTIVE_DISPUTES) {
                 cumulative += arbitrators[arb].reputation;
                 if (random < cumulative) {
                     activeDisputeCount[arb]++;

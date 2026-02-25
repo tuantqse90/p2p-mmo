@@ -86,7 +86,7 @@ async def deliver_order(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="NOT_SELLER")
 
     try:
-        order = await order_service.seller_confirm_delivery(order, body.product_key_encrypted, db)
+        order = await order_service.seller_confirm_delivery(order_id, body.product_key_encrypted, db)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return OrderResponse.model_validate(order)
@@ -106,13 +106,12 @@ async def confirm_order(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="NOT_BUYER")
 
     try:
-        order = await order_service.buyer_confirm_received(order, db)
+        order = await order_service.buyer_confirm_received(order_id, db)
+        # Create review and update trade counts atomically within the same transaction
+        await review_service.create_review(order_id, user.wallet, body.rating, db)
+        await reputation_service.update_trade_counts(order.buyer_wallet, order.seller_wallet, db)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-    # Create review and update trade counts
-    await review_service.create_review(order_id, user.wallet, body.rating, db)
-    await reputation_service.update_trade_counts(order.buyer_wallet, order.seller_wallet, db)
 
     return OrderResponse.model_validate(order)
 
@@ -130,7 +129,7 @@ async def cancel_order(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="NOT_BUYER")
 
     try:
-        order = await order_service.cancel_order(order, db)
+        order = await order_service.cancel_order(order_id, db)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return OrderResponse.model_validate(order)
@@ -150,7 +149,7 @@ async def open_dispute(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
     try:
-        order = await order_service.open_dispute(order, db)
+        order = await order_service.open_dispute(order_id, db)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return OrderResponse.model_validate(order)
