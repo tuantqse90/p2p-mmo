@@ -1,0 +1,46 @@
+name: Contracts CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["contracts/**"]
+  pull_request:
+    branches: [main, develop]
+    paths: ["contracts/**"]
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Run Tests
+        run: forge test -vvv
+
+      - name: Run Fuzz Tests
+        run: forge test --match-path "test/*.fuzz.t.sol" -vvv --fuzz-runs 512
+
+      - name: Check Coverage
+        run: |
+          forge coverage --report summary
+          forge coverage --report lcov
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          forge coverage --report summary >> $GITHUB_STEP_SUMMARY
+
+      - name: Gas Report
+        run: forge test --gas-report >> $GITHUB_STEP_SUMMARY

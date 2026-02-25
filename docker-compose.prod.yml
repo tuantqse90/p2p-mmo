@@ -1,0 +1,239 @@
+version: "3.9"
+
+# Production Docker Compose for P2P Escrow Privacy Marketplace
+# Usage: docker compose -f docker-compose.prod.yml up -d
+#
+# Prerequisites:
+#   1. Copy .env.production.example to .env and fill all values
+#   2. Deploy smart contracts and update contract addresses
+#   3. Set up SSL certs in ./nginx/certs/ or use Cloudflare
+#   4. Configure DNS to point to this server
+
+services:
+  # --- Nginx Reverse Proxy ---
+
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- Database ---
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # --- Redis ---
+
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD}
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --save 60 1000
+        --appendonly yes
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # --- Backend API ---
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: "postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY}"
+      BSC_RPC_URL: "${BSC_RPC_URL}"
+      BSC_CHAIN_ID: "56"
+      BSC_BLOCK_CONFIRMATIONS: "15"
+      ESCROW_CONTRACT_ADDRESS: "${ESCROW_CONTRACT_ADDRESS}"
+      ARBITRATOR_POOL_ADDRESS: "${ARBITRATOR_POOL_ADDRESS}"
+      USDT_ADDRESS: "0x55d398326f99059fF775485246999027B3197955"
+      USDC_ADDRESS: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+      PINATA_API_KEY: "${PINATA_API_KEY}"
+      PINATA_SECRET_KEY: "${PINATA_SECRET_KEY}"
+      CORS_ORIGINS: "${CORS_ORIGINS}"
+      RATE_LIMIT_PER_MINUTE: "100"
+      AUTH_RATE_LIMIT_PER_MINUTE: "10"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: always
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # --- Celery Worker ---
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment:
+      APP_ENV: production
+      DATABASE_URL: "postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      BSC_RPC_URL: "${BSC_RPC_URL}"
+      BSC_CHAIN_ID: "56"
+      BSC_BLOCK_CONFIRMATIONS: "15"
+      ESCROW_CONTRACT_ADDRESS: "${ESCROW_CONTRACT_ADDRESS}"
+      ARBITRATOR_POOL_ADDRESS: "${ARBITRATOR_POOL_ADDRESS}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers worker --loglevel=warning --concurrency=4
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # --- Celery Beat ---
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment:
+      APP_ENV: production
+      DATABASE_URL: "postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      BSC_RPC_URL: "${BSC_RPC_URL}"
+      BSC_CHAIN_ID: "56"
+      BSC_BLOCK_CONFIRMATIONS: "15"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers beat --loglevel=warning
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # --- Monitoring ---
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  pgdata_prod:
+  redisdata_prod:
+  prometheusdata:
+  grafanadata:

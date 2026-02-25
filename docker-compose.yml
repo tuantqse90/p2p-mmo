@@ -1,0 +1,191 @@
+version: "3.9"
+
+services:
+  # --- Infrastructure ---
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: p2p
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-p2p_dev_password}
+      POSTGRES_DB: p2p_escrow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U p2p -d p2p_escrow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_dev_password}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_dev_password}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    entrypoint: ["anvil"]
+    command:
+      - "--host=0.0.0.0"
+      - "--port=8545"
+      - "--chain-id=56"
+      - "--block-time=3"
+      - "--accounts=10"
+      - "--balance=10000"
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: ["CMD-SHELL", "cast chain-id --rpc-url http://localhost:8545 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Deploy contracts to Anvil ---
+
+  deploy-contracts:
+    image: ghcr.io/foundry-rs/foundry:latest
+    working_dir: /contracts
+    volumes:
+      - ./contracts:/contracts
+    environment:
+      PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      DEPLOYER_ADDRESS: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+      TREASURY_ADDRESS: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+      STAKE_TOKEN: "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Anvil..."
+        sleep 5
+        echo "Deploying MockERC20 (USDT)..."
+        # Deploy a mock USDT for local dev
+        forge create test/helpers/MockERC20.sol:MockERC20 \
+          --rpc-url http://anvil:8545 \
+          --private-key $$PRIVATE_KEY \
+          --constructor-args "Mock USDT" "USDT" 18 \
+          --json | tee /tmp/usdt.json
+        echo "Deploying contracts..."
+        forge script script/Deploy.s.sol:Deploy \
+          --rpc-url http://anvil:8545 \
+          --private-key $$PRIVATE_KEY \
+          --broadcast
+        echo "Contracts deployed!"
+    depends_on:
+      anvil:
+        condition: service_healthy
+
+  # --- Application ---
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      DATABASE_URL: "postgresql+asyncpg://p2p:${DB_PASSWORD:-p2p_dev_password}@postgres:5432/p2p_escrow"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_dev_password}@redis:6379/0"
+      JWT_SECRET_KEY: "dev-jwt-secret-do-not-use-in-production"
+      BSC_RPC_URL: "http://anvil:8545"
+      BSC_CHAIN_ID: "56"
+      BSC_BLOCK_CONFIRMATIONS: "1"
+      ESCROW_CONTRACT_ADDRESS: ""
+      ARBITRATOR_POOL_ADDRESS: ""
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      RATE_LIMIT_PER_MINUTE: "1000"
+      AUTH_RATE_LIMIT_PER_MINUTE: "100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      anvil:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      DATABASE_URL: "postgresql+asyncpg://p2p:${DB_PASSWORD:-p2p_dev_password}@postgres:5432/p2p_escrow"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_dev_password}@redis:6379/0"
+      BSC_RPC_URL: "http://anvil:8545"
+      BSC_CHAIN_ID: "56"
+      BSC_BLOCK_CONFIRMATIONS: "1"
+      ESCROW_CONTRACT_ADDRESS: ""
+      ARBITRATOR_POOL_ADDRESS: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.workers worker --loglevel=info --concurrency=2
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      DATABASE_URL: "postgresql+asyncpg://p2p:${DB_PASSWORD:-p2p_dev_password}@postgres:5432/p2p_escrow"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_dev_password}@redis:6379/0"
+      BSC_RPC_URL: "http://anvil:8545"
+      BSC_CHAIN_ID: "56"
+      BSC_BLOCK_CONFIRMATIONS: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.workers beat --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      NEXT_PUBLIC_WS_URL: "ws://localhost:8000"
+      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "placeholder"
+      NEXT_PUBLIC_BSC_CHAIN_ID: "56"
+      NEXT_PUBLIC_ESCROW_ADDRESS: "0x0000000000000000000000000000000000000000"
+      NEXT_PUBLIC_ARBITRATOR_POOL_ADDRESS: "0x0000000000000000000000000000000000000000"
+      NEXT_PUBLIC_USDT_ADDRESS: "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+      NEXT_PUBLIC_USDC_ADDRESS: "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+
+volumes:
+  pgdata:
+  redisdata:
