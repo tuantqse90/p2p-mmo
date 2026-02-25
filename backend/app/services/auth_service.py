@@ -40,6 +40,12 @@ async def verify_signature(
         raise ValueError("NONCE_NOT_FOUND")
 
     nonce, timestamp = stored.decode().split(":")
+
+    # Validate nonce age (max 5 minutes)
+    nonce_age = int(datetime.now().timestamp()) - int(timestamp)
+    if nonce_age > NONCE_TTL:
+        raise ValueError("NONCE_EXPIRED")
+
     message = f"P2P-Auth-{timestamp}-{nonce}"
 
     # Verify signature recovers to wallet

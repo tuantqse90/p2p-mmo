@@ -50,9 +50,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     def _get_client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        if settings.trusted_proxy:
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
 
     def _is_rate_limited(self, client_ip: str) -> bool:

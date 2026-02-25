@@ -34,5 +34,10 @@ echo "  ArbitratorPool: $ARBITRATOR_POOL_ADDRESS"
 echo "  USDT:           $USDT_ADDRESS"
 echo "  ABI dir:        $CONTRACT_ABI_DIR"
 
+# ── Run Alembic migrations ──
+echo "Running database migrations..."
+cd /app && alembic upgrade head
+echo "Migrations complete."
+
 # ── Run the command passed as arguments ──
 exec "$@"

@@ -7,7 +7,7 @@ from app.models.base import EvidenceType
 
 
 class EvidenceSubmit(BaseModel):
-    ipfs_hash: str = Field(..., min_length=1, max_length=100)
+    ipfs_hash: str = Field(..., min_length=1, max_length=100, pattern=r"^(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z2-7]{55})$")
     evidence_type: EvidenceType
 
 

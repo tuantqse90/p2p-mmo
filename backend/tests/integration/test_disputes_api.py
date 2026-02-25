@@ -8,13 +8,13 @@ async def test_submit_evidence(client, buyer_headers, disputed_order):
         f"/disputes/{disputed_order.id}/evidence",
         headers=buyer_headers,
         json={
-            "ipfs_hash": "QmEvidence123",
+            "ipfs_hash": "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
             "evidence_type": "screenshot",
         },
     )
     assert resp.status_code == 201
     data = resp.json()
-    assert data["ipfs_hash"] == "QmEvidence123"
+    assert data["ipfs_hash"] == "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
     assert data["submitter_wallet"] == BUYER_WALLET
 
 
@@ -23,7 +23,7 @@ async def test_submit_evidence_seller(client, seller_headers, disputed_order):
         f"/disputes/{disputed_order.id}/evidence",
         headers=seller_headers,
         json={
-            "ipfs_hash": "QmSellerProof",
+            "ipfs_hash": "QmT5NvUtoM5nWFfrQdVrFtvGfKFmG7AHE8P34isapyhCxX",
             "evidence_type": "product_proof",
         },
     )
@@ -34,7 +34,7 @@ async def test_submit_evidence_not_disputed(client, buyer_headers, sample_order)
     resp = await client.post(
         f"/disputes/{sample_order.id}/evidence",
         headers=buyer_headers,
-        json={"ipfs_hash": "QmHash", "evidence_type": "other"},
+        json={"ipfs_hash": "QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4", "evidence_type": "other"},
     )
     assert resp.status_code == 400
 
@@ -43,7 +43,7 @@ async def test_submit_evidence_order_not_found(client, buyer_headers):
     resp = await client.post(
         f"/disputes/{uuid.uuid4()}/evidence",
         headers=buyer_headers,
-        json={"ipfs_hash": "QmHash", "evidence_type": "other"},
+        json={"ipfs_hash": "QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4", "evidence_type": "other"},
     )
     assert resp.status_code == 404
 

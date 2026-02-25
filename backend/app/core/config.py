@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_per_minute: int = 100
     auth_rate_limit_per_minute: int = 10
+    trusted_proxy: bool = False
 
     model_config = {"env_file": ".env", "case_sensitive": False}
 

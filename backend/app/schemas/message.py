@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class MessageCreate(BaseModel):
-    ciphertext: str = Field(..., min_length=1)
+    ciphertext: str = Field(..., min_length=1, max_length=65536)
     nonce: str = Field(..., min_length=1, max_length=44)
 
 
