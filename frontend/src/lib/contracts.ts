@@ -1,4 +1,5 @@
 export const P2PEscrowABI = [
+  // --- Functions ---
   {
     type: "function",
     name: "createOrder",
@@ -64,6 +65,20 @@ export const P2PEscrowABI = [
   },
   {
     type: "function",
+    name: "autoExpireOrder",
+    inputs: [{ name: "orderId", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "autoReleaseToSeller",
+    inputs: [{ name: "orderId", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "getOrder",
     inputs: [{ name: "orderId", type: "uint256" }],
     outputs: [
@@ -99,6 +114,130 @@ export const P2PEscrowABI = [
     stateMutability: "view",
   },
   {
+    type: "function",
+    name: "nextOrderId",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "treasury",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "arbitratorPool",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "paused",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "PLATFORM_FEE_BPS",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "ARB_FEE_BPS",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "BPS_DENOMINATOR",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "SELLER_TIMEOUT",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "CONFIRM_WINDOW",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "DISPUTE_WINDOW",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "MIN_ORDER_AMOUNT",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  // --- Admin Functions ---
+  {
+    type: "function",
+    name: "setSupportedToken",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "supported", type: "bool" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "setTreasury",
+    inputs: [{ name: "newTreasury", type: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "setArbitratorPool",
+    inputs: [{ name: "newPool", type: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "pause",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "unpause",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "owner",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  // --- Events ---
+  {
     type: "event",
     name: "OrderCreated",
     inputs: [
@@ -112,11 +251,240 @@ export const P2PEscrowABI = [
   },
   {
     type: "event",
+    name: "SellerConfirmed",
+    inputs: [
+      { name: "orderId", type: "uint256", indexed: true },
+      { name: "confirmedAt", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
     name: "OrderCompleted",
     inputs: [
       { name: "orderId", type: "uint256", indexed: true },
       { name: "amountToSeller", type: "uint256", indexed: false },
       { name: "platformFee", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "OrderCancelled",
+    inputs: [
+      { name: "orderId", type: "uint256", indexed: true },
+      { name: "cancelledBy", type: "address", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "OrderExpired",
+    inputs: [
+      { name: "orderId", type: "uint256", indexed: true },
+      { name: "reason", type: "uint8", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "DisputeOpened",
+    inputs: [
+      { name: "orderId", type: "uint256", indexed: true },
+      { name: "openedBy", type: "address", indexed: true },
+      { name: "evidenceHash", type: "string", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "EvidenceSubmitted",
+    inputs: [
+      { name: "orderId", type: "uint256", indexed: true },
+      { name: "submitter", type: "address", indexed: true },
+      { name: "evidenceHash", type: "string", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "DisputeResolved",
+    inputs: [
+      { name: "orderId", type: "uint256", indexed: true },
+      { name: "arbitrator", type: "address", indexed: true },
+      { name: "favorBuyer", type: "bool", indexed: false },
+      { name: "arbitrationFee", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
+
+export const ArbitratorPoolABI = [
+  // --- Functions ---
+  {
+    type: "function",
+    name: "register",
+    inputs: [{ name: "stakeAmount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "increaseStake",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "withdraw",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "selectArbitrator",
+    inputs: [
+      { name: "buyer", type: "address" },
+      { name: "seller", type: "address" },
+    ],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "updateReputation",
+    inputs: [
+      { name: "arbitrator", type: "address" },
+      { name: "consistent", type: "bool" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "getArbitrator",
+    inputs: [{ name: "arbitrator", type: "address" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "addr", type: "address" },
+          { name: "stake", type: "uint256" },
+          { name: "reputation", type: "uint256" },
+          { name: "totalResolved", type: "uint256" },
+          { name: "totalEarned", type: "uint256" },
+          { name: "isActive", type: "bool" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getActiveArbitratorCount",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "activeDisputeCount",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "arbitrators",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [
+      { name: "addr", type: "address" },
+      { name: "stake", type: "uint256" },
+      { name: "reputation", type: "uint256" },
+      { name: "totalResolved", type: "uint256" },
+      { name: "totalEarned", type: "uint256" },
+      { name: "isActive", type: "bool" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "stakeToken",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "escrowContract",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "MIN_STAKE",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "MAX_ACTIVE_DISPUTES",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "INITIAL_REPUTATION",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "MAX_REPUTATION",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "owner",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  // --- Events ---
+  {
+    type: "event",
+    name: "ArbitratorRegistered",
+    inputs: [
+      { name: "arbitrator", type: "address", indexed: true },
+      { name: "stake", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "ArbitratorWithdrawn",
+    inputs: [
+      { name: "arbitrator", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "StakeIncreased",
+    inputs: [
+      { name: "arbitrator", type: "address", indexed: true },
+      { name: "added", type: "uint256", indexed: false },
+      { name: "newTotal", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "ReputationUpdated",
+    inputs: [
+      { name: "arbitrator", type: "address", indexed: true },
+      { name: "newReputation", type: "uint256", indexed: false },
+      { name: "increased", type: "bool", indexed: false },
     ],
   },
 ] as const;

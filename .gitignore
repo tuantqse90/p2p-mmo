@@ -35,6 +35,7 @@ next-env.d.ts
 contracts/cache/
 contracts/out/
 contracts/lib/
+contracts/broadcast/
 
 # IDE
 .idea/
@@ -48,6 +49,14 @@ contracts/lib/
 npm-debug.log*
 yarn-debug.log*
 
+# Celery
+celerybeat-schedule
+
+# Test artifacts
+frontend/test-results/
+frontend/playwright-report/
+
 # Misc
 *.pem
 coverage/
+data.txt

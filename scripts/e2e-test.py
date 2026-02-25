@@ -149,7 +149,7 @@ def authenticate(role):
     w3 = Web3()
     msg = encode_defunct(text=message)
     signed = w3.eth.account.sign_message(msg, private_key=account["key"])
-    signature = signed.signature.hex()
+    signature = "0x" + signed.signature.hex()
 
     # Step 3: Derive NaCl keypair from signature (mirrors frontend deriveKeyPair)
     sk = derive_nacl_keypair(signature)
@@ -315,7 +315,8 @@ def test_seller_message():
 def test_get_messages():
     resp = api("get", f"/orders/{order_id}/messages", token=tokens["buyer"])
     assert resp.status_code == 200
-    messages = resp.json()
+    data = resp.json()
+    messages = data.get("items", data) if isinstance(data, dict) else data
     assert len(messages) >= 2
 
 
@@ -426,7 +427,8 @@ def test_encrypted_decrypt():
     """Seller retrieves and decrypts the buyer's NaCl-encrypted message."""
     resp = api("get", f"/orders/{order_id}/messages", token=tokens["seller"])
     assert resp.status_code == 200
-    messages = resp.json()
+    data = resp.json()
+    messages = data.get("items", data) if isinstance(data, dict) else data
     assert len(messages) >= 1, f"Expected at least 1 message, got {len(messages)}"
 
     # Find the encrypted message
@@ -458,7 +460,8 @@ def test_encrypted_reply():
     # Buyer retrieves and decrypts
     resp = api("get", f"/orders/{order_id}/messages", token=tokens["buyer"])
     assert resp.status_code == 200
-    messages = resp.json()
+    data = resp.json()
+    messages = data.get("items", data) if isinstance(data, dict) else data
     assert len(messages) >= 2, f"Expected at least 2 messages, got {len(messages)}"
 
     # Decrypt the seller's reply (last message)
@@ -474,7 +477,8 @@ def test_encrypted_wrong_key():
     """Verify that a third party cannot decrypt messages."""
     resp = api("get", f"/orders/{order_id}/messages", token=tokens["buyer"])
     assert resp.status_code == 200
-    messages = resp.json()
+    data = resp.json()
+    messages = data.get("items", data) if isinstance(data, dict) else data
     msg = messages[0]
 
     # Try to decrypt with arbitrator's key (should fail)
